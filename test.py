@@ -58,24 +58,22 @@ def load_faiss_index():
     else:
         st.error("FAISS index files not found!")
         return None, None
-col_load, col_generate = st.columns(2)
-    # Streamlit buttons
-with col_load:
-    if st.button("Generate FAISS Index"):
-        index_clip = faiss.IndexFlatL2(512)
-        index_dino = faiss.IndexFlatL2(768)
-        generate_faiss_index(images, index_clip, index_dino)
+
+# Streamlit buttons
+if st.button("Generate FAISS Index"):
+    index_clip = faiss.IndexFlatL2(512)
+    index_dino = faiss.IndexFlatL2(768)
+    generate_faiss_index(images, index_clip, index_dino)
+    st.session_state.index_clip = index_clip
+    st.session_state.index_dino = index_dino
+    st.success("FAISS index generated and saved successfully!")
+
+if st.button("Load FAISS Index"):
+    index_clip, index_dino = load_faiss_index()
+    if index_clip is not None and index_dino is not None:
         st.session_state.index_clip = index_clip
         st.session_state.index_dino = index_dino
-        st.success("FAISS index generated and saved successfully!")
-
-with col_generate:
-    if st.button("Load FAISS Index"):
-        index_clip, index_dino = load_faiss_index()
-        if index_clip is not None and index_dino is not None:
-            st.session_state.index_clip = index_clip
-            st.session_state.index_dino = index_dino
-            st.success("FAISS index loaded successfully!")
+        st.success("FAISS index loaded successfully!")
 
 # Ensure the indices are defined before performing search
 if 'index_clip' in st.session_state and 'index_dino' in st.session_state:
@@ -126,17 +124,20 @@ if 'index_clip' in st.session_state and 'index_dino' in st.session_state:
         # Perform DINO image search for each selected image
         all_distances = []
         all_indices = []
+        selected_image_indices = []
 
         for selected_image in st.session_state.selected_images:
             img = Image.open(selected_image).convert('RGB')
             D_dino, I_dino = search_index_image(img, index_dino)
             all_distances.extend(D_dino[0])
             all_indices.extend(I_dino[0])
+            selected_image_indices.extend([selected_image] * len(D_dino[0]))
 
         # Get the 20 images with the least distances
         least_distance_indices = np.argsort(all_distances)[:20]
         top_images = [images[all_indices[idx]] for idx in least_distance_indices]
         top_distances = [all_distances[idx] for idx in least_distance_indices]
+        top_selected_images = [selected_image_indices[idx] for idx in least_distance_indices]
 
         st.write("Top matching images using DINO:")
         cols = st.columns(5)
@@ -153,10 +154,10 @@ if 'index_clip' in st.session_state and 'index_dino' in st.session_state:
             import pandas as pd
 
             data = []
-            for idx, selected_image in enumerate(st.session_state.selected_images):
-                data.append([query, selected_image, top_images[idx], top_distances[idx]])
+            for idx in range(20):
+                data.append([query, top_selected_images[idx], top_images[idx], top_distances[idx]])
 
             df = pd.DataFrame(data, columns=["Query", "Selected Image", "Similar Image", "Distance"])
-            df.to_csv("selected_images.csv", index=False)
+            df.to_csv(DIR_PATH + '/' + "selected_images.csv", index=False)
 else:
     st.warning("Please load or generate the FAISS index first.")

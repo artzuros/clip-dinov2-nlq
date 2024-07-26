@@ -5,11 +5,10 @@ from transformers import CLIPModel, AutoProcessor
 import faiss
 import os
 import numpy as np
-from torch.utils.data import DataLoader, Dataset
+import datetime
 from torchvision import transforms
 import streamlit as st
-
-from sklearn.metrics.pairwise import cosine_similarity
+import pandas as pd
 
 from utils.utils import ImageDataset, normalizeL2, add_vector_to_index, extract_features_dino, extract_features_clip, search_index_image, search_index_text
 
@@ -46,14 +45,14 @@ def generate_faiss_index(images, index_clip, index_dino):
         dino_features = extract_features_dino(img)
         add_vector_to_index(dino_features, index_dino)
 
-    faiss.write_index(index_clip, 'index_clip.index')
-    faiss.write_index(index_dino, 'index_dino.index')
+    faiss.write_index(index_clip, DIR_PATH + '/' + 'index_clip.index')
+    faiss.write_index(index_dino, DIR_PATH + '/' + 'index_dino.index')
 
 # Load FAISS index
 def load_faiss_index():
-    if os.path.exists('index_clip.index') and os.path.exists('index_dino.index'):
-        index_clip = faiss.read_index('index_clip.index')
-        index_dino = faiss.read_index('index_dino.index')
+    if os.path.exists(DIR_PATH + '/' + 'index_clip.index') and os.path.exists(DIR_PATH + '/' + 'index_dino.index'):
+        index_clip = faiss.read_index(DIR_PATH + '/' + 'index_clip.index')
+        index_dino = faiss.read_index(DIR_PATH + '/' + 'index_dino.index')
         return index_clip, index_dino
     else:
         st.error("FAISS index files not found!")
@@ -114,50 +113,52 @@ if 'index_clip' in st.session_state and 'index_dino' in st.session_state:
                         st.session_state.selected_images.pop(index)
                         st.session_state.selected_distances.pop(index)
 
-    # Display the selected images
+    # Provide options for export or further processing after CLIP selection
     if "selected_images" in st.session_state and st.session_state.selected_images:
-        st.write("Selected Images:")
-        for selected_image, distance in zip(st.session_state.selected_images, st.session_state.selected_distances):
-            st.image(selected_image, use_column_width=True)
-            st.write(f"Distance: {distance}")
-
-        # Perform DINO image search for each selected image
-        all_distances = []
-        all_indices = []
-        selected_image_indices = []
-
-        for selected_image in st.session_state.selected_images:
-            img = Image.open(selected_image).convert('RGB')
-            D_dino, I_dino = search_index_image(img, index_dino)
-            all_distances.extend(D_dino[0])
-            all_indices.extend(I_dino[0])
-            selected_image_indices.extend([selected_image] * len(D_dino[0]))
-
-        # Get the 20 images with the least distances
-        least_distance_indices = np.argsort(all_distances)[:20]
-        top_images = [images[all_indices[idx]] for idx in least_distance_indices]
-        top_distances = [all_distances[idx] for idx in least_distance_indices]
-        top_selected_images = [selected_image_indices[idx] for idx in least_distance_indices]
-
-        st.write("Top matching images using DINO:")
-        cols = st.columns(5)
-        for idx in range(20):
-            img_path = top_images[idx]
-            col = cols[idx % 5]
-            with col:
-                img = Image.open(img_path)
-                st.image(img, use_column_width=True)
-                st.write(f"Distance: {top_distances[idx]:.3f}")
-
-        # Export the selected images to CSV
-        if st.button("Export to CSV"):
-            import pandas as pd
-
+        if st.button("Export Selected Images to CSV"):
             data = []
-            for idx in range(20):
-                data.append([query, top_selected_images[idx], top_images[idx], top_distances[idx]])
+            for image_path, distance in zip(st.session_state.selected_images, st.session_state.selected_distances):
+                data.append([query, image_path, distance])
 
-            df = pd.DataFrame(data, columns=["Query", "Selected Image", "Similar Image", "Distance"])
-            df.to_csv(DIR_PATH + '/' + "selected_images.csv", index=False)
+            df = pd.DataFrame(data, columns=["Query", "Image", "Distance"])
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            df.to_csv(DIR_PATH + '/' + timestamp + "selected_images_clip.csv", index=False)
+            st.success("Selected images exported to CSV!")
+
+        if st.button("Process Selected Images with DINO"):
+            st.session_state.dino_search_results = []
+
+            for selected_image in st.session_state.selected_images:
+                img = Image.open(selected_image).convert('RGB')
+                D_dino, I_dino = search_index_image(img, index_dino)
+                for d, i in zip(D_dino[0], I_dino[0]):
+                    st.session_state.dino_search_results.append((selected_image, images[i], d))
+
+            # Get the 20 images with the least distances
+            st.session_state.dino_search_results.sort(key=lambda x: x[2])
+            st.session_state.dino_search_results = st.session_state.dino_search_results[:20]
+
+            st.write("Top matching images using DINO:")
+            cols = st.columns(5)
+            for idx, (selected_image, similar_image, distance) in enumerate(st.session_state.dino_search_results):
+                col = cols[idx % 5]
+                with col:
+                    img = Image.open(similar_image)
+                    st.image(img, use_column_width=True)
+                    st.write(f"Distance: {distance:.3f}")
+
+            st.session_state.dino_search_export = True
+
+        if st.session_state.get("dino_search_export", False):
+            if st.button("Export DINO Results to CSV"):
+                data = []
+                for query_image, similar_image, distance in st.session_state.dino_search_results:
+                    data.append([query, query_image, similar_image, distance])
+
+                df = pd.DataFrame(data, columns=["Query", "Selected Image", "Similar Image", "Distance"])
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                df.to_csv(DIR_PATH + '/' + timestamp + "selected_images_dino.csv", index=False)
+                st.success("DINO results exported to CSV!")
+
 else:
     st.warning("Please load or generate the FAISS index first.")

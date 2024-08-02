@@ -1,10 +1,10 @@
 numpy==1.23.3
 scikit-learn==1.3.0
 streamlit==1.36.0
-faiss-gpu==1.7.2
+faiss-cpu==1.7.2
+
 # Torch CPU
 torch==2.3.1
 torchaudio==2.3.1
 torchvision==0.18.1
 transformers==4.42.4
-# pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu117

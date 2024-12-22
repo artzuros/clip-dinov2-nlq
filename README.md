@@ -9,6 +9,12 @@ This project implements an image search application using CLIP and DINO models. 
 - **FAISS Index**: Supports generating and loading FAISS indices for efficient search.
 - **Export Functionality**: Export selected images and search results to CSV files.
 
+## Streamlit Test App
+
+![alt text](media/CLIP-DINOv2-POC.gif)
+
+<!-- For full working video of streamlit app : 
+`github.com/artzuros/clip-dinov2-nlq/blob/master/media/CLIP-DINOv2-POC.mp4` -->
 ## Requirements
 
 - Python 3.9+
